@@ -1,0 +1,6 @@
+node_modules/
+dashboard/state/
+dashboard/statusline/
+dashboard/fx.json
+dashboard/dismissed.json
+docs/*.png
