@@ -2,15 +2,11 @@
 
 My WezTerm setup, with a live side panel that shows every [Claude Code](https://claude.com/claude-code) session I have running: which ones are working, which ones are waiting for me, what each one is doing, and how many tokens they've used.
 
-![WezTerm with a Claude Code session on the left and the sessions panel on the right](docs/screenshot.png)
-
 Press **Ctrl+a** then **d** and the panel opens on the right of your tab. Each card is one Claude Code session: what you asked for, what it is doing right now, how full its context is, and roughly what it has cost. The box at the bottom shows your plan usage limits.
-
-<p align="center"><img src="docs/panel.png" width="420" alt="Close-up of the sessions panel"></p>
 
 Tabs running Claude also get a status icon in their title, and the status bar keeps a count (`● 1  ✻ 2  ✓ 3`), so you can see at a glance when something needs you.
 
-Want to see it before installing anything? Run `node dashboard/dash.js --demo` in any terminal. (The screenshots are made with demo data too; `docs/demo/screenshot.ps1` recreates them.)
+Want to see it before installing anything? Run `node dashboard/dash.js --demo` in any terminal.
 
 ## What's in here
 
