@@ -39,7 +39,8 @@ local settings = {
   -- Claude Code panel (Leader+d) -------------------------------------------
   claude = {
     -- Where install.js put hook.js / dash.js. Change it if you moved them.
-    dashboard_dir = home .. "/.claude/dashboard",
+    -- Can also be set with the CLAUDE_DASHBOARD_DIR environment variable.
+    dashboard_dir = os.getenv("CLAUDE_DASHBOARD_DIR") or (home .. "/.claude/dashboard"),
     panel_width = 0.3,            -- share of the tab the panel takes
     panel_side = "Right",         -- "Right" or "Left"
   },

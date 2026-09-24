@@ -2,42 +2,15 @@
 
 My WezTerm setup, with a live side panel that shows every [Claude Code](https://claude.com/claude-code) session I have running: which ones are working, which ones are waiting for me, what each one is doing, and how many tokens they've used.
 
-Press **Ctrl+a** then **d**, and this opens on the right of your tab:
+![WezTerm with a Claude Code session on the left and the sessions panel on the right](docs/screenshot.png)
 
-```
- ✻ Claude  sessions             Recent · 14:05
-──────────────────────────────────────────────
- ● 1 needs you   ✻ 1 working   ✓ 1 done
+Press **Ctrl+a** then **d** and the panel opens on the right of your tab. Each card is one Claude Code session: what you asked for, what it is doing right now, how full its context is, and roughly what it has cost. The box at the bottom shows your plan usage limits.
 
- Today ──────────────────────────────────────
- ╭──────────────────────────────────────────╮
- │ ● Add hourly forecast view               │
- │   weather-app  ·  needs you  ·  4m   [1] │
- │                                          │
- │   Add an hourly forecast view to the     │
- │   weather app, with a small graph        │
- │                                          │
- │   ▸ Needs permission: Bash: npm test     │
- │                                          │
- │   ━━━━━━━━━━━━━━━━━━━━━━━━━━ 64.0k/200k  │
- │   Opus 5.5 High  ·  6 turns        $0.84 │
- ╰──────────────────────────────────────────╯
- ╭──────────────────────────────────────────╮
- │ ✻ Fix login token refresh                │
- │   api-server  ·  working  ·  1m 40s  [2] │
- ╰──────────────────────────────────────────╯
-
- ╭──────────────────────────────────────────╮
- │ Usage  last 6h                   ≈ $3.04 │
- │ Session ━━━━━━━  42%        resets 16:22 │
- │ Weekly  ━━━━━━━  18%    resets Mon 14:05 │
- │ ↑↓ 1-9 ⏎ jump  x close  a all  q quit    │
- ╰──────────────────────────────────────────╯
-```
+<p align="center"><img src="docs/panel.png" width="420" alt="Close-up of the sessions panel"></p>
 
 Tabs running Claude also get a status icon in their title, and the status bar keeps a count (`● 1  ✻ 2  ✓ 3`), so you can see at a glance when something needs you.
 
-Want to see it before installing anything? Run `node dashboard/dash.js --demo` in any terminal.
+Want to see it before installing anything? Run `node dashboard/dash.js --demo` in any terminal. (The screenshots are made with demo data too; `docs/demo/screenshot.ps1` recreates them.)
 
 ## What's in here
 

@@ -5,6 +5,7 @@
 //   node docs/demo/fake-chat.js
 // Press q to quit.
 
+const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
@@ -25,7 +26,7 @@ function box(rows, width, color) {
 
 const lines = [
   ``,
-  ...box([`${ORANGE}✻${R} ${B}Welcome to Claude Code!${R}`, "", `  ${DIM}cwd: ~/projects/weather-app${R}`], 55, ORANGE),
+  `${ORANGE}✻${R} ${B}Claude Code${R}  ${DIM}~/projects/weather-app${R}`,
   ``,
   `${DIM}>${R} ${GREY}Add an hourly forecast view to the weather app, with a small temperature graph${R}`,
   ``,
@@ -67,15 +68,42 @@ const lines = [
   ], 53, ORANGE),
 ];
 
-process.stdout.write("\x1b[2J\x1b[H\x1b[?25l" + lines.join("\r\n"));
+// Redraw from the top whenever the pane changes size.
+const paint = () => process.stdout.write("\x1b[2J\x1b[3J\x1b[H\x1b[?25l" + lines.join("\r\n"));
+paint();
+process.stdout.on("resize", paint);
 
-// Open the panel in demo mode beside us (only works inside WezTerm).
+// Fake session state so the tab icons and status bar counts have something
+// to show. Only written when CLAUDE_DASHBOARD_DIR points somewhere (the
+// screenshot script sets it to a temp folder), never to your real state.
+function fakeState(pane, status, cwd) {
+  const dir = process.env.CLAUDE_DASHBOARD_DIR;
+  if (!dir) return;
+  const stateDir = path.join(dir, "state");
+  fs.mkdirSync(stateDir, { recursive: true });
+  const id = `demo-${pane}`;
+  fs.writeFileSync(path.join(stateDir, `${id}.json`), JSON.stringify({
+    session_id: id, status, cwd, wezterm_pane: String(pane), updated_at: Date.now(),
+  }));
+}
+
+// Inside WezTerm: add two more fake tabs and open the panel in demo mode.
 if (process.env.WEZTERM_PANE && !process.argv.includes("--no-panel")) {
+  const me = process.env.WEZTERM_PANE;
   const dash = path.join(__dirname, "..", "..", "dashboard", "dash.js");
+  const idle = ["node", "-e", "setInterval(() => {}, 1e6)"];
+  const cli = (...args) => execFileSync("wezterm", ["cli", ...args]).toString().trim();
   try {
-    execFileSync("wezterm", ["cli", "set-tab-title", "weather-app"]);
-    execFileSync("wezterm", ["cli", "split-pane", "--right", "--percent", "34", "--", "node", dash, "--demo"]);
-    execFileSync("wezterm", ["cli", "activate-pane", "--pane-id", process.env.WEZTERM_PANE]);
+    cli("set-tab-title", "weather-app");
+    fakeState(me, "waiting", "/home/you/projects/weather-app");
+    for (const [title, status] of [["api-server", "working"], ["dotfiles", "done"]]) {
+      const pane = cli("spawn", "--", ...idle);
+      cli("set-tab-title", "--pane-id", pane, title);
+      fakeState(pane, status, `/home/you/projects/${title}`);
+    }
+    cli("activate-pane", "--pane-id", me);
+    cli("split-pane", "--right", "--percent", "34", "--", "node", dash, "--demo");
+    cli("activate-pane", "--pane-id", me);
   } catch {}
 }
 
