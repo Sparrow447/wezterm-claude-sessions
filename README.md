@@ -1,5 +1,15 @@
 # wezterm-claude-sessions
 
+<p>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-bd93f9?style=flat-square"></a>
+  <a href="https://wezfurlong.org/wezterm/"><img alt="WezTerm" src="https://img.shields.io/badge/WezTerm-config-ff79c6?style=flat-square&logo=wezterm&logoColor=white"></a>
+  <a href="https://claude.com/claude-code"><img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-hooks-ffb86c?style=flat-square&logo=claude&logoColor=white"></a>
+  <img alt="Lua" src="https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white">
+  <img alt="Node.js 18+" src="https://img.shields.io/badge/Node.js-18%2B-50fa7b?style=flat-square&logo=nodedotjs&logoColor=white">
+  <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-8be9fd?style=flat-square">
+  <img alt="Windows | macOS | Linux" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6272a4?style=flat-square">
+</p>
+
 My WezTerm setup, with a live side panel that shows every [Claude Code](https://claude.com/claude-code) session I have running: which ones are working, which ones are waiting for me, what each one is doing, and how many tokens they've used.
 
 Press **Ctrl+a** then **d** and the panel opens on the right of your tab. Each card is one Claude Code session: what you asked for, what it is doing right now, how full its context is, and roughly what it has cost. The box at the bottom shows your plan usage limits.
@@ -137,6 +147,12 @@ The cost shown is what the tokens would cost at API prices. If you're on a Claud
 - Built and used daily on Windows 11. macOS and Linux should work (the paths and commands are cross-platform), but I haven't tested them as much.
 - Opened a lot of sessions before installing? The panel still finds them from their transcripts. It just can't show live status until they're restarted with the hooks.
 
+## Contributing
+
+Found a bug or have an idea? [Open an issue](https://github.com/Sparrow447/wezterm-claude-sessions/issues) or send a pull request. Ports to other terminals, new color themes and better macOS/Linux support are all welcome.
+
+If this helped you, a ⭐ on the repo is appreciated.
+
 ## License
 
-MIT
+[MIT](LICENSE) © Sparrow447. Use it, change it, share it.
