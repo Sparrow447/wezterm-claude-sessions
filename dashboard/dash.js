@@ -6,7 +6,7 @@
 //   tokens, model, your asks  -> Claude Code's own transcripts in ~/.claude/projects
 //   plan limits, context size -> statusline/<session>.json, saved by statusline.js
 //
-// Keys: ↑↓ or j/k select · enter jump to pane · 1-9 jump · x close · a all/recent · q quit
+// Keys: ↑↓ or j/k select · enter open (jump to its pane, or resume it) · 1-9 open · x close · a all/recent · q quit
 //
 // Try it without Claude running:  node dash.js --demo
 // Print a single frame and exit:   node dash.js --frame 48 40
@@ -313,7 +313,9 @@ function discover() {
     const p = s.transcript ? parse(s.transcript) : newParser();
     const lastAct = Math.max(p.mtime || 0, (s.state && s.state.updated_at) || 0);
     if (now - lastAct > win && !(s.state && s.state.status === "waiting")) continue;
-    if (dismissed[s.id] && lastAct <= dismissed[s.id] + 2000) continue; // hidden until it's active again
+    // Hidden until it's active again. A pane closed from the panel stays hidden
+    // even though its SessionEnd hook touches the state file afterwards.
+    if (dismissed[s.id] && (lastAct <= dismissed[s.id] + 2000 || (s.state && s.state.status === "ended"))) continue;
     s.p = p;
     s.sub = s.transcript ? subagentTotals(s.transcript, s.id) : { inp: 0, out: 0, cr: 0, cw: 0, usd: 0, n: 0 };
     s.lastAct = lastAct;
@@ -380,27 +382,23 @@ function markEnded(s) {
 
 // Prepare a close: find the session's live pane (if any) and ask to confirm.
 function requestClose(s) {
-  const paneId = s.state && s.state.wezterm_pane != null ? Number(s.state.wezterm_pane) : null;
-  const trusted = paneId != null && weztermStart && s.lastAct > weztermStart && s.status !== "ended";
   const label = short(s.p.title || s.p.firstAsk || "session", 28);
-  if (!trusted) {
-    confirm = { s, pane: null, text: `Hide "${label}" from the list?` };
-    draw();
-    return;
-  }
-  listPanes((panes) => {
-    const pane = panes.find((p) => p.pane_id === paneId);
+  findPane(s, (pane) => {
     confirm = pane
-      ? { s, pane: paneId, text: `Close pane ${paneId} (${short(pane.title, 20)}) running "${label}"?` }
-      : { s, pane: null, text: `Pane is gone. Hide "${label}"?` };
+      ? { s, pane: pane.pane_id, text: `Close pane ${pane.pane_id} (${short(pane.title, 20)}) running "${label}"?` }
+      : { s, pane: null, text: `Hide "${label}" from the list?` };
     draw();
-  });
+  }, true);
 }
 
 function doClose() {
   const c = confirm;
   confirm = null;
   if (!c) return;
+  // Keep your place in the list: select the card below (or above) the closed one.
+  const i = sessions.findIndex((s) => s.id === c.s.id);
+  const next = sessions[i + 1] || sessions[i - 1];
+  if (i >= 0 && next) selectedId = next.id;
   if (c.pane != null) {
     execFile("wezterm", ["cli", "kill-pane", "--pane-id", String(c.pane)], () => {});
     markEnded(c.s);
@@ -415,6 +413,8 @@ function doClose() {
 let tick = 0;
 let sessions = [];
 let selectedId = null;
+let selectedIdx = 0; // where the selection was, for when its session leaves the list
+let scrollTop = 0; // first card shown; only moves when the selection would leave the view
 let confirm = null; // { s, pane, text }
 let flash = "", flashAt = 0;
 
@@ -458,25 +458,42 @@ function resetLabel(sec) {
   const hm = d.toTimeString().slice(0, 5);
   return dayIndex(d.getTime()) === 0 ? `resets ${hm}` : `resets ${d.toLocaleDateString("en-GB", { weekday: "short" })} ${hm}`;
 }
-function limitRow(name, lim, W) {
+// Percent used of a plan limit (0 once its window has reset) and its color.
+function limitPct(lim) {
   if (!lim || lim.used_percentage == null) return null;
   const expired = lim.resets_at && Date.now() / 1000 > lim.resets_at;
   const pct = expired ? 0 : Math.max(0, Math.min(100, Math.round(lim.used_percentage)));
-  const label = ` ${String(pct).padStart(3)}%`;
-  const reset = expired ? "reset" : resetLabel(lim.resets_at);
-  const barW = Math.max(4, W - 8 - name.length - label.length - 18); // fixed room for the reset text keeps bars aligned
-  const color = pct >= 85 ? P.red : pct >= 60 ? P.yellow : P.purple;
-  return { parts: [[name, P.faint], ...bar(pct / 100, barW, color), [label, P.text, BOLD]], right: [reset, P.faint] };
+  return { pct, expired, color: pct >= 85 ? P.red : pct >= 60 ? P.yellow : P.purple };
+}
+function limitRow(name, lim, W) {
+  const l = limitPct(lim);
+  if (!l) return null;
+  const label = ` ${String(l.pct).padStart(3)}%`;
+  let reset = l.expired ? "reset" : resetLabel(lim.resets_at);
+  if (W < 44) reset = reset.replace("resets ", ""); // narrow panel: just the time
+  const barW = Math.max(4, W - 8 - name.length - label.length - (W < 44 ? 10 : 18)); // fixed room for the reset text keeps bars aligned
+  return { parts: [[name, P.faint], ...bar(l.pct / 100, barW, l.color), [label, P.text, BOLD]], right: [reset, P.faint] };
 }
 
-function card(s, idx, W, selected) {
+// One line per session, for when the panel is too small for cards.
+function miniCard(s, W, selected) {
+  const meta = STATUS[s.status] || STATUS.idle;
+  const live = s.status === "working" || s.status === "waiting" || s.status === "error";
+  const right = W >= 30 ? [(live ? meta.label : ago(s.lastAct)) + " ", P.faint] : null;
+  return [row([[selected ? "▌" : " ", P.pink, BOLD], [(meta.icon || SPIN[tick % SPIN.length]) + " ", meta.color, BOLD],
+    [s.p.title || s.p.firstAsk || "Untitled session", selected ? P.pink : P.text, selected ? BOLD : ""]], W, right)];
+}
+
+// level: 2 = everything, 1 = title, project and first ask, 0 = one line.
+function card(s, idx, W, selected, level) {
+  if (level === 0) return miniCard(s, W, selected);
   const st = s.state || {};
   const p = s.p;
   const meta = STATUS[s.status] || STATUS.idle;
   const icon = meta.icon || SPIN[tick % SPIN.length];
   const now = Date.now();
   const live = s.status === "working" || s.status === "waiting";
-  const full = live || selected;
+  const full = level === 2;
   const tw = W - 8; // text width inside the box (after the 2-space indent)
   const rows = [];
 
@@ -545,9 +562,28 @@ function card(s, idx, W, selected) {
   return box(rows, W, color);
 }
 
+// Key help, longest version that fits in w columns.
+function helpParts(w) {
+  const T = P.text, F = P.faint, all = showAll() ? "recent" : "all";
+  const variants = [
+    [["↑↓ ", T], ["1-9 ", T], ["⏎ ", T], ["open  ", F], ["x ", T], ["close  ", F], ["a ", T], [all + "  ", F], ["q ", T], ["quit", F]],
+    [["⏎ ", T], ["open  ", F], ["x ", T], ["close  ", F], ["a ", T], [all + "  ", F], ["q ", T], ["quit", F]],
+    [["⏎ ", T], ["open ", F], ["x ", T], ["close ", F], ["q ", T], ["quit", F]],
+    [["⏎ x a q", F]],
+  ];
+  return variants.find((v) => v.reduce((a, [t]) => a + t.length, 0) <= w) || variants[variants.length - 1];
+}
+
+// The panel adapts to its size. Roughly, by height:
+//   40+ rows  everything; working sessions show full cards too
+//   30+       full footer with usage and plan limits
+//   14-29     one-line usage footer; only the selected card is full
+//   under 14  one line per session, footer is just the key help
+// Narrow panels (under 44 columns) get shorter labels, under 26 one line per session.
 function draw() {
-  const W = Math.max(30, process.stdout.columns || 48);
-  const H = Math.max(10, process.stdout.rows || 40);
+  const W = Math.max(12, process.stdout.columns || 48);
+  const H = Math.max(1, process.stdout.rows || 40);
+  const narrow = W < 44;
   const counts = {};
   const tot = { usd: 0, out: 0, inp: 0, cr: 0 };
   for (const s of sessions) {
@@ -557,79 +593,118 @@ function draw() {
     tot.inp += s.p.inp + s.p.cw + s.sub.inp + s.sub.cw;
     tot.cr += s.p.cr + s.sub.cr;
   }
-  if (!sessions.find((s) => s.id === selectedId)) selectedId = sessions[0] ? sessions[0].id : null;
+  // If the selected session left the list (closed, hidden), select whichever
+  // took its place instead of jumping back to the top.
+  if (!sessions.find((s) => s.id === selectedId)) {
+    const s = sessions[Math.min(selectedIdx, sessions.length - 1)];
+    selectedId = s ? s.id : null;
+  }
+  const sel = Math.max(0, sessions.findIndex((s) => s.id === selectedId));
+  selectedIdx = sel;
   const blank = " ".repeat(W);
+  const rule = fg(P.border) + "─".repeat(W) + RESET;
   const out = [];
 
-  // Header, like the tab bar: ✻ Claude ............ 6h · 18:39
-  out.push(row([[" ✻ ", P.pink, BOLD], ["Claude", P.purple, BOLD], ["  sessions", P.faint]], W,
-    [`${winLabel(windowHours)} · ${new Date().toTimeString().slice(0, 5)} `, showAll() ? P.purple : P.faint]));
-  out.push(fg(P.border) + "─".repeat(W) + RESET);
-
-  const sum = [[" ", P.text]];
-  for (const k of ["waiting", "working", "done", "idle", "stale", "error"]) {
-    if (!counts[k]) continue;
-    const meta = STATUS[k];
-    if (sum.length > 1) sum.push(["   ", P.text]);
-    sum.push([`${meta.icon || "✻"} `, meta.color], [`${counts[k]} ${meta.label}`, P.muted]);
+  // Header, like the tab bar: ✻ Claude ............ Recent · 18:39
+  const time = new Date().toTimeString().slice(0, 5);
+  const hr = W >= 36 ? `${winLabel(windowHours)} · ${time} ` : W >= 24 ? `${time} ` : null;
+  out.push(row([[" ✻ ", P.pink, BOLD], ["Claude", P.purple, BOLD], [W >= 36 ? "  sessions" : "", P.faint]], W,
+    hr && [hr, showAll() ? P.purple : P.faint]));
+  if (H >= 12) out.push(rule);
+  if (H >= 20) {
+    const sum = [[" ", P.text]];
+    for (const k of ["waiting", "working", "done", "idle", "stale", "error"]) {
+      if (!counts[k]) continue;
+      const meta = STATUS[k];
+      if (sum.length > 1) sum.push([narrow ? "  " : "   ", P.text]);
+      sum.push([`${meta.icon || "✻"} `, meta.color], [narrow ? String(counts[k]) : `${counts[k]} ${meta.label}`, P.muted]);
+    }
+    out.push(row(sum, W));
+    out.push(blank);
   }
-  out.push(row(sum, W));
-  out.push(blank);
 
   // Bottom: confirmation prompt, flash message, or key help
+  const msg = (w) => (flash && Date.now() - flashAt < 3000 ? [[flash, P.green]] : helpParts(w));
   let bottom;
   if (confirm) {
-    bottom = box([
-      ...wrap(confirm.text, W - 7, 2).map((l) => [[l, P.yellow, BOLD]]),
-      [["y ", P.green, BOLD], ["yes   ", P.faint], ["n ", P.red, BOLD], ["no", P.faint]],
-    ], W, P.yellow);
-  } else {
-    const help = [["↑↓ ", P.text], ["1-9 ", P.text], ["⏎ ", P.text], ["jump  ", P.faint], ["x ", P.text], ["close  ", P.faint],
-      ["a ", P.text], [showAll() ? "recent  " : "all  ", P.faint], ["q ", P.text], ["quit", P.faint]];
+    const yn = [["y ", P.green, BOLD], ["yes   ", P.faint], ["n ", P.red, BOLD], ["no", P.faint]];
+    if (H >= 20) bottom = box([...wrap(confirm.text, W - 7, 2).map((l) => [[l, P.yellow, BOLD]]), yn], W, P.yellow);
+    else if (H >= 8) bottom = [rule, row([[" " + confirm.text, P.yellow, BOLD]], W), row([[" ", P.text], ...yn], W)];
+    else bottom = [row([[" " + confirm.text, P.yellow, BOLD]], W, ["y/n ", P.text])];
+  } else if (H >= 30 && W >= 30) {
     const usage = { parts: [["Usage", P.purple, BOLD], [showAll() ? "  all time" : `  last ${RECENT_HOURS}h`, P.faint]], right: ["≈ " + formatCost(tot.usd), P.cyan] };
     const tokens = [["out ", P.faint], [num(tot.out), P.muted], ["  in ", P.faint], [num(tot.inp), P.muted],
       ["  cache ", P.faint], [num(tot.cr), P.muted]];
-    const msg = flash && Date.now() - flashAt < 3000 ? [[flash, P.green]] : help;
     const rl = planLimits();
     const limits = rl ? [limitRow("Session ", rl.five_hour, W), limitRow("Weekly  ", rl.seven_day, W)].filter(Boolean) : [];
-    bottom = box([usage, ...limits, tokens, [], msg], W);
+    bottom = box([usage, ...limits, tokens, [], msg(W - 6)], W);
+  } else if (H >= 14) {
+    const stats = [[" ≈ " + formatCost(tot.usd), P.cyan]];
+    const rl = planLimits() || {};
+    for (const [name, lim] of [["5h", rl.five_hour], ["7d", rl.seven_day]]) {
+      const l = limitPct(lim);
+      if (l) stats.push([`  ${name} `, P.faint], [`${l.pct}%`, l.color, BOLD]);
+    }
+    bottom = [rule, row(stats, W), row([[" ", P.text], ...msg(W - 1)], W)];
+  } else {
+    bottom = [row([[" ", P.text], ...msg(W - 1)], W)];
   }
-  const room = H - bottom.length;
+  const room = Math.max(0, H - bottom.length);
+  if (out.length > room) out.length = room;
+  const avail = room - out.length;
 
   if (!sessions.length) {
     const spark = ["╲   │   ╱", " ╲  │  ╱ ", "──  ✻  ──", " ╱  │  ╲ ", "╱   │   ╲"];
-    const top = Math.max(out.length, Math.floor((room - spark.length - 2) / 2));
+    const text = showAll() ? "No sessions yet" : `No sessions in the last ${RECENT_HOURS}h`;
+    const lines = avail >= spark.length + 2 && W >= 20 ? [...spark, "", text] : [text];
+    const top = out.length + Math.max(0, Math.floor((avail - lines.length) / 2));
     while (out.length < top) out.push(blank);
-    for (const l of spark) out.push(row([[" ".repeat(Math.floor((W - l.length) / 2)) + l, P.faint]], W));
-    out.push(blank);
-    const msg = showAll() ? "No sessions yet" : `No sessions in the last ${RECENT_HOURS}h`;
-    out.push(row([[" ".repeat(Math.floor((W - msg.length) / 2)) + msg, P.faint]], W));
+    for (const l of lines) out.push(row([[" ".repeat(Math.max(1, Math.floor((W - l.length) / 2))) + l, P.faint]], W));
   } else {
-    // Keep the selected card visible: start from it if it would not fit.
-    // Each card carries its day heading when it starts a new day group.
-    const cards = sessions.map((s, i) => {
-      const c = card(s, i, W, s.id === selectedId);
+    // How much of each card to show. The selected card gets the most room
+    // and shrinks until it fits.
+    const n = sessions.length;
+    const mini = W < 26 || avail < 10;
+    const withDays = !mini || avail >= 8;
+    const build = (i, level) => {
+      const s = sessions[i];
+      const c = card(s, i, W, i === sel, level);
       const label = dayLabel(s.lastAct);
-      if (i > 0 && label === dayLabel(sessions[i - 1].lastAct)) return c;
+      if (!withDays || (i > 0 && label === dayLabel(sessions[i - 1].lastAct))) return c;
       const head = row([[" " + label + " ", P.purple, BOLD], ["─".repeat(Math.max(0, W - label.length - 3)), P.border]], W);
-      return i === 0 ? [head, ...c] : [" ".repeat(W), head, ...c];
+      return i === 0 || mini ? [head, ...c] : [blank, head, ...c];
+    };
+    const cards = sessions.map((s, i) => {
+      if (mini || i === sel) return build(i, mini ? 0 : 2);
+      const live = s.status === "working" || s.status === "waiting";
+      return build(i, avail < 18 ? 0 : live && H >= 40 ? 2 : 1);
     });
-    const sel = Math.max(0, sessions.findIndex((s) => s.id === selectedId));
-    let start = 0;
-    const fits = (from, to) => cards.slice(from, to + 1).reduce((a, c) => a + c.length, 0) <= room - out.length;
-    while (start < sel && !fits(start, sel)) start++;
-    if (start > 0) out.push(row([[`  ↑ ${start} more`, P.faint]], W));
-    let i = start;
-    for (; i < cards.length; i++) {
-      if (out.length + cards[i].length > room - (i < cards.length - 1 ? 1 : 0)) break;
-      out.push(...cards[i]);
+    const arrows = (sel > 0 ? 1 : 0) + (sel < n - 1 ? 1 : 0);
+    for (let level = 1; level >= 0 && cards[sel].length + arrows > avail; level--) cards[sel] = build(sel, level);
+
+    // Scroll only as far as needed to keep the selected card in view, and
+    // pull cards back down when there's free space at the bottom (after a close).
+    const span = (a, b) => cards.slice(a, b + 1).reduce((t, c) => t + c.length, 0) + (a > 0 ? 1 : 0) + (b < n - 1 ? 1 : 0);
+    let start = Math.min(scrollTop, sel);
+    while (start < sel && span(start, sel) > avail) start++;
+    while (start > 0 && span(start - 1, n - 1) <= avail) start--;
+    scrollTop = start;
+    if (span(start, start) > avail) {
+      out.push(...cards[start].slice(0, avail)); // too small for anything else
+    } else {
+      if (start > 0) out.push(row([[`  ↑ ${start} more`, P.faint]], W));
+      let i = start;
+      for (; i < n; i++) {
+        if (out.length + cards[i].length + (i < n - 1 ? 1 : 0) > room) break;
+        out.push(...cards[i]);
+      }
+      if (i < n) out.push(row([[`  ↓ ${n - i} more`, P.faint]], W));
     }
-    if (i < cards.length) out.push(row([[`  ↓ ${cards.length - i} more`, P.faint]], W));
   }
   while (out.length < room) out.push(blank);
   out.length = room;
   out.push(...bottom);
-  process.stdout.write("\x1b[H" + out.join("\r\n"));
+  process.stdout.write("\x1b[H" + out.slice(0, H).join("\r\n"));
 }
 
 function refresh() {
@@ -640,7 +715,8 @@ function refresh() {
 
 function move(delta) {
   if (!sessions.length) return;
-  const i = Math.max(0, sessions.findIndex((s) => s.id === selectedId));
+  let i = sessions.findIndex((s) => s.id === selectedId);
+  if (i < 0) i = selectedIdx; // selected session just left the list
   selectedId = sessions[Math.min(sessions.length - 1, Math.max(0, i + delta))].id;
   draw();
 }
@@ -651,22 +727,44 @@ function say(msg) {
   draw();
 }
 
-// Select a card and, if its session is still open in a WezTerm pane, switch
-// to that tab and pane. Pane ids reset when WezTerm restarts, so we check the
-// pane is really there before jumping.
+// The WezTerm pane a session is running in, or null. Pane ids restart when
+// WezTerm restarts, so a stored id only counts if the session was active
+// since then and the pane still exists. strict: also give up when we don't
+// know when WezTerm started (used before killing a pane).
+function findPane(s, cb, strict) {
+  const id = s.state && s.state.wezterm_pane != null ? Number(s.state.wezterm_pane) : null;
+  if (id == null || s.status === "ended") return cb(null);
+  if (weztermStart ? s.lastAct <= weztermStart : strict) return cb(null);
+  listPanes((panes) => cb(panes.find((x) => x.pane_id === id) || null));
+}
+
+// Select a card and open its chat: switch to its tab and pane if it's still
+// open, otherwise resume it with `claude --resume` in a new tab.
 function jump(s) {
   if (!s) return;
   selectedId = s.id;
   draw();
   if (DEMO) return;
-  const pane = s.state && s.state.wezterm_pane;
-  if (pane == null || s.status === "ended") return say("No open pane for this session");
-  listPanes((panes) => {
-    const p = panes.find((x) => x.pane_id === Number(pane));
-    if (!p) return say("That session's pane is closed");
-    execFile("wezterm", ["cli", "activate-tab", "--tab-id", String(p.tab_id)], () => {
-      execFile("wezterm", ["cli", "activate-pane", "--pane-id", String(p.pane_id)], () => {});
-    });
+  findPane(s, (p) => {
+    if (p) {
+      execFile("wezterm", ["cli", "activate-tab", "--tab-id", String(p.tab_id)], () => {
+        execFile("wezterm", ["cli", "activate-pane", "--pane-id", String(p.pane_id)], () => {});
+      });
+    } else if ((s.status === "working" || s.status === "waiting") && Date.now() - s.lastAct < 10 * 60e3) {
+      say("Still running outside WezTerm");
+    } else resume(s);
+  });
+}
+
+function resume(s) {
+  const cwd = (s.state && s.state.cwd) || s.p.cwd;
+  if (!cwd || !fs.existsSync(cwd)) return say("Its folder is gone, can't resume");
+  const [cmd, ...args] = [].concat(config.claudeCommand || "claude");
+  execFile("wezterm", ["cli", "spawn", "--cwd", cwd, "--", cmd, ...args, "--resume", s.id], (err, out) => {
+    if (err) return say("Couldn't open it: " + String(err.message).split("\n")[0]);
+    const pane = String(out).trim();
+    if (pane) execFile("wezterm", ["cli", "activate-pane", "--pane-id", pane], () => {});
+    say(`Opened "${short(s.p.title || s.p.firstAsk || "session", 24)}"`);
   });
 }
 
@@ -705,7 +803,7 @@ process.stdin.on("data", (k) => {
   else if (k === "a") { windowHours = showAll() ? RECENT_HOURS : Infinity; refresh(); }
   else if (/^[1-9]$/.test(k)) jump(sessions[Number(k) - 1]);
 });
-process.stdout.on("resize", draw);
+process.stdout.on("resize", () => { process.stdout.write("\x1b[2J"); draw(); });
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 refresh();

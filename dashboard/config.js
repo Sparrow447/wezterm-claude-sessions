@@ -15,6 +15,11 @@ module.exports = {
   // panel to flip to every session on disk.
   recentHours: 6,
 
+  // How Enter starts Claude when it reopens a chat that isn't open anymore
+  // (it runs `<this> --resume <id>` in a new tab). A string, or an array
+  // for extra arguments, e.g. ["claude", "--model", "opus"].
+  claudeCommand: "claude",
+
   // How often the panel redraws, in milliseconds.
   refreshMs: 1000,
 

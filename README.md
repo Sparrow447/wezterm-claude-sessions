@@ -99,6 +99,7 @@ The panel's own settings live in `~/.claude/dashboard/config.js` (reinstalling w
 
 - `currency` / `locale`: show costs in `"EUR"`, `"NOK"`, `"GBP"` and so on. The exchange rate is fetched twice a day.
 - `recentHours`: how far back the default view goes
+- `claudeCommand`: what Enter runs to reopen a closed chat (`claude --resume <id>` by default)
 - `colors`: match these to your terminal theme
 
 The status icons and colors for tabs and the status bar are at the top of `modules/claude.lua`.
@@ -108,11 +109,15 @@ The status icons and colors for tabs and the status bar are at the top of `modul
 | Key       | Does                                                      |
 |-----------|-----------------------------------------------------------|
 | ↑ ↓ / j k | select a session                                          |
-| 1 – 9     | select that session and jump to its tab                   |
-| Enter     | jump to the selected session's tab                        |
+| 1 – 9     | select that session and open it (like Enter)              |
+| Enter     | open the chat: jump to its tab, or resume it in a new tab if it's closed |
 | x         | close the session's pane (asks first), or hide it from the list |
 | a         | switch between recent sessions and all of them            |
 | q         | close the panel                                           |
+
+After closing or hiding a session, the selection moves to the card that took its place, so you stay where you were in the list.
+
+**Small panels:** the panel fits itself to its pane. When it's short, only the selected session gets a full card, the usage box shrinks to one line (`≈ cost  5h 42%  7d 18%`), and below about 14 rows (or 26 columns) every session becomes a single line. You can still scroll through all of them with ↑ ↓.
 
 ## Other shortcuts
 
