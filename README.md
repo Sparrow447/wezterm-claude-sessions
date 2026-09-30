@@ -10,7 +10,7 @@
   <img alt="Windows | macOS | Linux" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6272a4?style=flat-square">
 </p>
 
-My WezTerm setup, with a live side panel that shows every [Claude Code](https://claude.com/claude-code) session I have running: which ones are working, which ones are waiting for me, what each one is doing, and how many tokens they've used.
+My WezTerm setup (and now iTerm2 too), with a live side panel that shows every [Claude Code](https://claude.com/claude-code) session I have running: which ones are working, which ones are waiting for me, what each one is doing, and how many tokens they've used.
 
 Press **Ctrl+a** then **d** and the panel opens on the right of your tab. Each card is one Claude Code session: what you asked for, what it is doing right now, how full its context is, and roughly what it has cost. The box at the bottom shows your plan usage limits.
 
@@ -41,7 +41,13 @@ dashboard/                the Claude Code side (Node.js, no dependencies)
   pricing.js              API prices per model, used for the cost estimate
   demo.js                 made-up sessions for --demo
 
-install.js                copies dashboard/ into place and sets up the hooks
+  terminal.js             talks to WezTerm or iTerm2 (find, jump to, close, resume a session)
+
+iterm/
+  claude_sessions.py      iTerm2 script: panel toggle, tab icons, status bar counts
+
+install.js                copies dashboard/ into place and sets up the hooks (--iterm: iTerm2 too)
+tests/                    node --test tests/*.test.js  ·  python3 -m unittest discover -s tests
 ```
 
 ## Install
@@ -78,6 +84,26 @@ require("modules.claude").apply(config, {
 })
 require("modules.status_bar").apply(config, {})
 ```
+
+## iTerm2 (macOS)
+
+The panel also runs in [iTerm2](https://iterm2.com/). It notices it's in iTerm2 on its own (`TERM_PROGRAM=iTerm.app`) and uses AppleScript to jump to, close and resume sessions. A small iTerm2 Python script brings the rest of the WezTerm experience: a panel toggle, the tab icons and the status bar counts.
+
+```sh
+node install.js --iterm
+```
+
+This does everything `node install.js` does, plus it copies `iterm/claude_sessions.py` into iTerm2's `Scripts/AutoLaunch` folder and saves your `node` path to `~/.claude/dashboard/iterm.json` (iTerm2 starts the panel without your shell's `PATH`). Then, in iTerm2:
+
+1. **Settings → General → Magic → Enable Python API.**
+2. **Scripts → AutoLaunch → claude_sessions.py** (the first time, iTerm2 offers to download its Python runtime; say yes). From now on it starts with iTerm2.
+3. **Tab icons:** Settings → Profiles → General → Title → pick **Claude status**.
+4. **Status bar counts:** Settings → Profiles → Session → Status bar enabled → Configure Status Bar → drag in **Claude sessions**.
+5. **Panel key:** Settings → Keys → Key Bindings → **+** → pick a shortcut → Action: **Invoke Script Function** → `claude_toggle_panel(session_id: id)`.
+
+Use a **Cmd** shortcut (for example ⌘⇧Y). Avoid Ctrl+Shift+D: terminals send it as plain Ctrl+D, which quits Claude Code whenever the script isn't running.
+
+Panel width and side are in `~/.claude/dashboard/iterm.json` (`panel_width`, `panel_side`). If detection ever guesses wrong, set `terminal: "iterm"` or `"wezterm"` in `config.js`. The first time the panel opens or closes a session, macOS may ask to let iTerm2 control iTerm2; allow it.
 
 ## Customizing
 

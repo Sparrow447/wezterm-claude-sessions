@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-30
+
+### Added
+- **iTerm2 support.** The panel works in iTerm2 too: Enter jumps to a chat's tab, `x` closes it and closed chats resume in a new tab, all through AppleScript. `node install.js --iterm` also installs an iTerm2 script with a panel toggle you bind to a key (`claude_toggle_panel`), a "Claude status" tab title with status icons, and a "Claude sessions" status bar component (`● 1  ✻ 2  ✓ 3`).
+- `terminal` option in `config.js` to force `"wezterm"` or `"iterm"` if detection guesses wrong.
+- Tests: `node --test tests/*.test.js` and `python3 -m unittest discover -s tests`.
+
+### Changed
+- The WezTerm-specific parts of `dash.js` moved into `dashboard/terminal.js`, behind a small adapter shared by both terminals.
+
 ## 2026-09-27
 
 ### Added

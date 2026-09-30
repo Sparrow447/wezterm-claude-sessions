@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// dash.js - the Claude Code sessions panel that runs in a WezTerm side pane.
+// dash.js - the Claude Code sessions panel that runs in a WezTerm or iTerm2 side pane.
 //
 // Where the data comes from:
 //   status / what it's doing  -> state/<session>.json, written by hook.js
@@ -13,9 +13,9 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFile } = require("child_process");
 const { DASH_DIR, STATE_DIR, PROJECTS_DIR, describe, short } = require("./lib");
 const { usageCostUSD, formatCost } = require("./pricing");
+const { detect: detectTerminal, create: createTerminal } = require("./terminal");
 const config = require("./config");
 
 const DEMO = process.argv.includes("--demo");
@@ -345,25 +345,8 @@ function resolveStatus(s, p, now) {
 }
 
 // ---------------------------------------------------------------- closing sessions
-// WezTerm pane ids restart at 0 when WezTerm restarts, so only trust a stored
-// pane id if the session was active after the current WezTerm process started.
-// If we can't tell when WezTerm started, "x" just hides sessions instead.
-let weztermStart = 0;
-const onStart = (err, out) => { if (!err) weztermStart = Date.parse(String(out).trim()) || 0; };
-if (DEMO) {
-  // nothing to close in demo mode
-} else if (process.platform === "win32") {
-  execFile("powershell.exe", ["-NoProfile", "-Command",
-    "(Get-Process wezterm-gui | Sort-Object StartTime | Select-Object -First 1).StartTime.ToString('o')"], onStart);
-} else {
-  execFile("sh", ["-c", 'ps -o lstart= -p "$(pgrep -o wezterm-gui)"'], onStart);
-}
-
-function listPanes(cb) {
-  execFile("wezterm", ["cli", "list", "--format", "json"], (err, out) => {
-    try { cb(err ? [] : JSON.parse(out)); } catch { cb([]); }
-  });
-}
+// The terminal we're running in (WezTerm or iTerm2), see terminal.js.
+const term = createTerminal(detectTerminal(process.env, config.terminal));
 
 function dismiss(s) {
   dismissed[s.id] = Date.now();
@@ -385,7 +368,7 @@ function requestClose(s) {
   const label = short(s.p.title || s.p.firstAsk || "session", 28);
   findPane(s, (pane) => {
     confirm = pane
-      ? { s, pane: pane.pane_id, text: `Close pane ${pane.pane_id} (${short(pane.title, 20)}) running "${label}"?` }
+      ? { s, pane, text: `Close ${paneLabel(pane)} (${short(pane.title, 20)}) running "${label}"?` }
       : { s, pane: null, text: `Hide "${label}" from the list?` };
     draw();
   }, true);
@@ -399,12 +382,12 @@ function doClose() {
   const i = sessions.findIndex((s) => s.id === c.s.id);
   const next = sessions[i + 1] || sessions[i - 1];
   if (i >= 0 && next) selectedId = next.id;
-  if (c.pane != null) {
-    execFile("wezterm", ["cli", "kill-pane", "--pane-id", String(c.pane)], () => {});
+  if (c.pane) {
+    term.close(c.pane);
     markEnded(c.s);
   }
   dismiss(c.s);
-  flash = c.pane != null ? `Closed pane ${c.pane}` : "Hidden";
+  flash = c.pane ? `Closed ${paneLabel(c.pane)}` : "Hidden";
   flashAt = Date.now();
   refresh();
 }
@@ -727,16 +710,15 @@ function say(msg) {
   draw();
 }
 
-// The WezTerm pane a session is running in, or null. Pane ids restart when
-// WezTerm restarts, so a stored id only counts if the session was active
-// since then and the pane still exists. strict: also give up when we don't
-// know when WezTerm started (used before killing a pane).
+// The pane a session is running in, or null. strict: be extra sure (used
+// before closing a pane), see terminal.js for what that means per terminal.
 function findPane(s, cb, strict) {
-  const id = s.state && s.state.wezterm_pane != null ? Number(s.state.wezterm_pane) : null;
-  if (id == null || s.status === "ended") return cb(null);
-  if (weztermStart ? s.lastAct <= weztermStart : strict) return cb(null);
-  listPanes((panes) => cb(panes.find((x) => x.pane_id === id) || null));
+  if (!s.state || s.status === "ended") return cb(null);
+  term.find(s.state, cb, { lastAct: s.lastAct, strict });
 }
+
+// "pane 4" in WezTerm; iTerm2's ids are long UUIDs, so just "session" there.
+const paneLabel = (p) => (typeof p.id === "number" ? `pane ${p.id}` : "session");
 
 // Select a card and open its chat: switch to its tab and pane if it's still
 // open, otherwise resume it with `claude --resume` in a new tab.
@@ -747,11 +729,9 @@ function jump(s) {
   if (DEMO) return;
   findPane(s, (p) => {
     if (p) {
-      execFile("wezterm", ["cli", "activate-tab", "--tab-id", String(p.tab_id)], () => {
-        execFile("wezterm", ["cli", "activate-pane", "--pane-id", String(p.pane_id)], () => {});
-      });
+      term.focus(p);
     } else if ((s.status === "working" || s.status === "waiting") && Date.now() - s.lastAct < 10 * 60e3) {
-      say("Still running outside WezTerm");
+      say(`Still running outside ${term.name}`);
     } else resume(s);
   });
 }
@@ -760,10 +740,8 @@ function resume(s) {
   const cwd = (s.state && s.state.cwd) || s.p.cwd;
   if (!cwd || !fs.existsSync(cwd)) return say("Its folder is gone, can't resume");
   const [cmd, ...args] = [].concat(config.claudeCommand || "claude");
-  execFile("wezterm", ["cli", "spawn", "--cwd", cwd, "--", cmd, ...args, "--resume", s.id], (err, out) => {
+  term.spawn(cwd, [cmd, ...args, "--resume", s.id], (err) => {
     if (err) return say("Couldn't open it: " + String(err.message).split("\n")[0]);
-    const pane = String(out).trim();
-    if (pane) execFile("wezterm", ["cli", "activate-pane", "--pane-id", pane], () => {});
     say(`Opened "${short(s.p.title || s.p.firstAsk || "session", 24)}"`);
   });
 }

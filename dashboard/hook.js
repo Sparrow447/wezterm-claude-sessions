@@ -24,6 +24,7 @@ function main(raw) {
   s.cwd = h.cwd || s.cwd;
   s.transcript_path = h.transcript_path || s.transcript_path;
   s.wezterm_pane = process.env.WEZTERM_PANE || s.wezterm_pane || null;
+  s.iterm_session = process.env.ITERM_SESSION_ID || s.iterm_session || null;
   s.started_at = s.started_at || now;
   s.updated_at = now;
   s.tool_count = s.tool_count || 0;
