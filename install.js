@@ -5,10 +5,14 @@
 //   2. adds the hooks to ~/.claude/settings.json (a backup is saved first)
 //   3. hooks up the status line so the panel can show plan limits
 //
+//   4. with --iterm: installs the iTerm2 script (panel toggle, tab icons,
+//      status bar counter) into iTerm2's AutoLaunch folder
+//
 // Run it again any time to update; it won't add anything twice.
 // The WezTerm config is a separate copy step, see the README.
 //
 //   node install.js             install
+//   node install.js --iterm     install, plus the iTerm2 script (macOS)
 //   node install.js --dry-run   show what would change, touch nothing
 
 const fs = require("fs");
@@ -16,6 +20,7 @@ const path = require("path");
 const os = require("os");
 
 const DRY = process.argv.includes("--dry-run");
+const ITERM = process.argv.includes("--iterm");
 const CLAUDE_DIR = path.join(os.homedir(), ".claude");
 const DEST = path.join(CLAUDE_DIR, "dashboard");
 const SETTINGS = path.join(CLAUDE_DIR, "settings.json");
@@ -91,4 +96,43 @@ if (!DRY) {
   fs.writeFileSync(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
 }
 log(`updated ${slash(SETTINGS)}`);
+
+// 4. iTerm2 ------------------------------------------------------------------
+if (ITERM) installIterm();
+
+function installIterm() {
+  if (process.platform !== "darwin") {
+    console.error("--iterm: iTerm2 is macOS only, skipping.");
+    return;
+  }
+  const autoLaunch = path.join(os.homedir(), "Library", "Application Support", "iTerm2", "Scripts", "AutoLaunch");
+  const script = path.join(autoLaunch, "claude_sessions.py");
+  if (!DRY) fs.mkdirSync(autoLaunch, { recursive: true });
+  if (!DRY) fs.copyFileSync(path.join(__dirname, "iterm", "claude_sessions.py"), script);
+  log(`copied claude_sessions.py to ${slash(autoLaunch)}`);
+
+  // iTerm2 starts the panel without your shell's PATH, so remember where node is.
+  // Your edits to iterm.json (panel_width, panel_side...) are kept.
+  const itermJson = path.join(DEST, "iterm.json");
+  let prev = {};
+  try { prev = JSON.parse(fs.readFileSync(itermJson, "utf8")); } catch {}
+  const out = { dashboard_dir: DEST, node: stableNode(), panel_width: 0.3, panel_side: "Right", ...prev };
+  if (!DRY) fs.writeFileSync(itermJson, JSON.stringify(out, null, 2) + "\n");
+  log(`wrote ${slash(itermJson)}`);
+  console.log(
+    "\niTerm2: enable Settings > General > Magic > Python API, then Scripts > AutoLaunch > claude_sessions.py" +
+    "\n(iTerm2 offers to download its Python runtime the first time)." +
+    "\nThen bind a key: Settings > Keys > Key Bindings > + > Invoke Script Function > claude_toggle_panel(session_id: id)");
+}
+
+// The first node on PATH, as written (/opt/homebrew/bin/node), not
+// process.execPath, which resolves to a versioned Cellar folder that
+// disappears on the next `brew upgrade`.
+function stableNode() {
+  for (const dir of (process.env.PATH || "").split(path.delimiter)) {
+    const p = path.join(dir, "node");
+    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch {}
+  }
+  return process.execPath;
+}
 console.log("\nDone. Restart any running Claude Code sessions so they pick up the hooks.");

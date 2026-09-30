@@ -20,6 +20,10 @@ module.exports = {
   // for extra arguments, e.g. ["claude", "--model", "opus"].
   claudeCommand: "claude",
 
+  // Which terminal the panel drives: "wezterm" or "iterm". Leave it null to
+  // tell from the environment (iTerm2 sets TERM_PROGRAM=iTerm.app).
+  terminal: null,
+
   // How often the panel redraws, in milliseconds.
   refreshMs: 1000,
 
