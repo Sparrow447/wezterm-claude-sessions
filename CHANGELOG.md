@@ -8,7 +8,7 @@
 - Tests: `node --test tests/*.test.js` and `python3 -m unittest discover -s tests`.
 
 ### Fixed
-- The panel checks its real size before every frame instead of relying on the resize signal alone. In iTerm2 the pane is resized right after the panel starts, and a missed resize left it drawing at the old width, so wrapped lines looked like a doubled panel.
+- The panel checks its real size before every frame instead of relying on the resize signal alone. In iTerm2 the pane is resized right after the panel starts, and a missed resize left it drawing at the old width, so wrapped lines looked like a doubled panel. Clearing also wipes the scrollback now: iTerm2 keeps scrollback on the alternate screen by default, so every resize used to stack another copy of the panel above the live one.
 
 ### Changed
 - iTerm2: there's one panel for all tabs. The key closes it in the tab that has it and jumps to it from any other tab, instead of opening another copy of the same list.

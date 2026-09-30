@@ -578,7 +578,10 @@ function termSize() {
 function draw() {
   const [cols, rows] = termSize();
   const size = `${cols}x${rows}`;
-  if (lastSize && size !== lastSize) process.stdout.write("\x1b[2J"); // wipe the old layout
+  // Wipe the old layout, and the scrollback too: iTerm2 keeps scrollback on
+  // the alternate screen by default, so each clear would stack a stale copy
+  // of the panel above the live one.
+  if (lastSize && size !== lastSize) process.stdout.write("\x1b[2J\x1b[3J");
   lastSize = size;
   const W = Math.max(12, cols || 48);
   const H = Math.max(1, rows || 40);
@@ -779,7 +782,7 @@ function cleanup() {
   process.exit(0);
 }
 process.title = "Claude Sessions"; // ConPTY drops OSC titles; this sets the console title WezTerm shows
-process.stdout.write("\x1b]2;Claude Sessions\x07\x1b[?1049h\x1b[?25l");
+process.stdout.write("\x1b]2;Claude Sessions\x07\x1b[?1049h\x1b[2J\x1b[3J\x1b[?25l");
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (k) => {
@@ -797,7 +800,7 @@ process.stdin.on("data", (k) => {
   else if (k === "a") { windowHours = showAll() ? RECENT_HOURS : Infinity; refresh(); }
   else if (/^[1-9]$/.test(k)) jump(sessions[Number(k) - 1]);
 });
-process.stdout.on("resize", () => { process.stdout.write("\x1b[2J"); draw(); });
+process.stdout.on("resize", draw); // draw() notices the new size and clears
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 refresh();
