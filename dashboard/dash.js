@@ -563,9 +563,25 @@ function helpParts(w) {
 //   14-29     one-line usage footer; only the selected card is full
 //   under 14  one line per session, footer is just the key help
 // Narrow panels (under 44 columns) get shorter labels, under 26 one line per session.
+// Ask the terminal for its size on every frame instead of trusting the
+// "resize" event alone: iTerm2 resizes the panel right after starting it,
+// and that SIGWINCH can land before Node listens, leaving stdout.columns stale.
+const FRAME_ONLY = process.argv.includes("--frame");
+let lastSize = "";
+function termSize() {
+  if (process.stdout.isTTY && !FRAME_ONLY) {
+    try { return process.stdout.getWindowSize(); } catch {}
+  }
+  return [process.stdout.columns, process.stdout.rows];
+}
+
 function draw() {
-  const W = Math.max(12, process.stdout.columns || 48);
-  const H = Math.max(1, process.stdout.rows || 40);
+  const [cols, rows] = termSize();
+  const size = `${cols}x${rows}`;
+  if (lastSize && size !== lastSize) process.stdout.write("\x1b[2J"); // wipe the old layout
+  lastSize = size;
+  const W = Math.max(12, cols || 48);
+  const H = Math.max(1, rows || 40);
   const narrow = W < 44;
   const counts = {};
   const tot = { usd: 0, out: 0, inp: 0, cr: 0 };

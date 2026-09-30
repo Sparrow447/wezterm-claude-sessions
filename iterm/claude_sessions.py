@@ -110,6 +110,14 @@ def title_text(title, status):
     return f"{ICONS.get(status, '')} {title}"
 
 
+def panel_action(panel_tab_id, current_tab_id):
+    """One panel for all tabs: it already lists every session, so a second
+    copy in another tab would just repeat it."""
+    if panel_tab_id is None:
+        return "open"
+    return "close" if panel_tab_id == current_tab_id else "focus"
+
+
 # ---------------------------------------------------------------- iTerm2 glue
 async def is_panel(session):
     if session.name and PANEL_TITLE in session.name:
@@ -126,15 +134,28 @@ async def resize_panel(tab, main, panel, width):
     await tab.async_update_layout()
 
 
+async def find_panel(app):
+    for window in app.terminal_windows:
+        for tab in window.tabs:
+            for s in tab.sessions:
+                if await is_panel(s):
+                    return s
+    return None
+
+
 async def toggle_panel(app, session_id, settings):
     session = app.get_session_by_id(session_id)
     if not session or not session.tab:
         return
     tab = session.tab
-    for s in tab.sessions:
-        if await is_panel(s):
-            await s.async_send_text("q")  # dash.js quits on "q" and the pane closes with it
-            return
+    panel = await find_panel(app)
+    action = panel_action(panel.tab.tab_id if panel else None, tab.tab_id)
+    if action == "close":
+        await panel.async_send_text("q")  # dash.js quits on "q" and the pane closes with it
+        return
+    if action == "focus":
+        await panel.async_activate()  # selects its tab and brings its window forward
+        return
     profile = iterm2.LocalWriteOnlyProfile()
     profile.set_use_custom_command("Yes")
     profile.set_command(panel_command(settings))

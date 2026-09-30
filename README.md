@@ -101,7 +101,7 @@ This does everything `node install.js` does, plus it copies `iterm/claude_sessio
 4. **Status bar counts:** Settings → Profiles → Session → Status bar enabled → Configure Status Bar → drag in **Claude sessions**.
 5. **Panel key:** Settings → Keys → Key Bindings → **+** → pick a shortcut → Action: **Invoke Script Function** → `claude_toggle_panel(session_id: id)`.
 
-Use a **Cmd** shortcut (for example ⌘⇧Y). Avoid Ctrl+Shift+D: terminals send it as plain Ctrl+D, which quits Claude Code whenever the script isn't running.
+The key opens the panel, closes it when it's in the current tab, and jumps to it when it's open in another tab (one panel lists every session, so you only need one). Use a **Cmd** shortcut (for example ⌘⇧Y). Avoid Ctrl+Shift+D: terminals send it as plain Ctrl+D, which quits Claude Code whenever the script isn't running.
 
 Panel width and side are in `~/.claude/dashboard/iterm.json` (`panel_width`, `panel_side`). If detection ever guesses wrong, set `terminal: "iterm"` or `"wezterm"` in `config.js`. The first time the panel opens or closes a session, macOS may ask to let iTerm2 control iTerm2; allow it.
 

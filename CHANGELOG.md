@@ -7,7 +7,11 @@
 - `terminal` option in `config.js` to force `"wezterm"` or `"iterm"` if detection guesses wrong.
 - Tests: `node --test tests/*.test.js` and `python3 -m unittest discover -s tests`.
 
+### Fixed
+- The panel checks its real size before every frame instead of relying on the resize signal alone. In iTerm2 the pane is resized right after the panel starts, and a missed resize left it drawing at the old width, so wrapped lines looked like a doubled panel.
+
 ### Changed
+- iTerm2: there's one panel for all tabs. The key closes it in the tab that has it and jumps to it from any other tab, instead of opening another copy of the same list.
 - The WezTerm-specific parts of `dash.js` moved into `dashboard/terminal.js`, behind a small adapter shared by both terminals.
 
 ## 2026-09-27

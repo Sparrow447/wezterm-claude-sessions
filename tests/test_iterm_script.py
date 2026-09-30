@@ -72,6 +72,17 @@ class FormattingTest(unittest.TestCase):
         self.assertEqual(cs.title_text(None, "done"), "✓ ")
 
 
+class PanelActionTest(unittest.TestCase):
+    def test_opens_when_no_panel_anywhere(self):
+        self.assertEqual(cs.panel_action(None, "tab-1"), "open")
+
+    def test_closes_when_panel_is_in_this_tab(self):
+        self.assertEqual(cs.panel_action("tab-1", "tab-1"), "close")
+
+    def test_jumps_to_panel_in_another_tab(self):
+        self.assertEqual(cs.panel_action("tab-2", "tab-1"), "focus")
+
+
 class SettingsTest(unittest.TestCase):
     def test_defaults_when_file_missing(self):
         s = cs.load_settings("/nonexistent/iterm.json")
